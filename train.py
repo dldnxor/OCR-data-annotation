@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--max_epoch", type=int, default=200)
     parser.add_argument("--save_interval", type=int, default=5)
-    # parser.add_argument("-a", "--augments_name", type=str)
+    parser.add_argument("-a", "--augments_name", type=str, dest="augments_name")
 
     args = parser.parse_args()
 
@@ -121,7 +121,8 @@ def do_training(
 
 
 def main(args):
-    run = wandb.init(project="data-ann", entity="cv_09_dataannotation", name="your_augments")
+    augments_name = args.__dict__.pop("augments_name")
+    run = wandb.init(project="data-ann", entity="cv_09_dataannotation", name=augments_name)
     wandb.config.update(args)
     do_training(**args.__dict__)
 
