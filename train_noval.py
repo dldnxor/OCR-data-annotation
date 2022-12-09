@@ -4,6 +4,7 @@ import time
 import math
 from datetime import timedelta
 from argparse import ArgumentParser
+import random
 
 import torch
 from torch import cuda
@@ -15,8 +16,19 @@ from east_dataset import EASTDataset
 from dataset import SceneTextDataset
 from model import EAST
 
+import numpy as np
+
 import wandb
 
+
+def seed_everything(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
 
 def parse_args():
     parser = ArgumentParser()
@@ -31,6 +43,7 @@ def parse_args():
         "--model_dir", type=str, default=os.environ.get("SM_MODEL_DIR", "trained_models")
     )
 
+    parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument("--device", default="cuda" if cuda.is_available() else "cpu")
     parser.add_argument("--num_workers", type=int, default=4)
 
@@ -62,6 +75,8 @@ def do_training(
     max_epoch,
     save_interval,
 ):
+    seed_everything(args.seed)
+    
     dataset = SceneTextDataset(data_dir, split="train", image_size=image_size, crop_size=input_size)
     dataset = EASTDataset(dataset)
     num_batches = math.ceil(len(dataset) / batch_size)
