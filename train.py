@@ -67,6 +67,7 @@ def parse_args():
 def do_training(
     data_dir,
     model_dir,
+    seed,
     device,
     image_size,
     input_size,
@@ -76,7 +77,7 @@ def do_training(
     max_epoch,
     save_interval,
 ):
-    seed_everything(args.seed)
+    seed_everything(seed)
 
     train_set = SceneTextDataset(
         data_dir, split="train", image_size=image_size, crop_size=input_size
