@@ -8,7 +8,7 @@ import random
 
 import torch
 from torch import cuda
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torch.optim import lr_scheduler
 from tqdm import tqdm
 
@@ -36,9 +36,14 @@ def parse_args():
 
     # Conventional args
     parser.add_argument(
-        "--data_dir",
+        "--data_dir1",
         type=str,
         default=os.environ.get("SM_CHANNEL_TRAIN", "../input/data/ICDAR17_All"),
+    )
+    parser.add_argument(
+        "--data_dir2",
+        type=str,
+        default=os.environ.get("SM_CHANNEL_TRAIN", "../input/data/ICDAR15_All"),
     )
     parser.add_argument(
         "--model_dir", type=str, default=os.environ.get("SM_MODEL_DIR", "trained_models")
@@ -65,7 +70,8 @@ def parse_args():
 
 
 def do_training(
-    data_dir,
+    data_dir1,
+    data_dir2,
     model_dir,
     seed,
     device,
@@ -80,18 +86,26 @@ def do_training(
     seed_everything(seed)
     best_epoch_loss = 10000
 
-
-    train_set = SceneTextDataset(
-        data_dir, split="train", image_size=image_size, crop_size=input_size
+    train_set1 = SceneTextDataset(
+        data_dir1, split="train", image_size=image_size, crop_size=input_size
     )
-    train_set = EASTDataset(train_set)
+    train_set1 = EASTDataset(train_set1)
+
+    train_set2 = SceneTextDataset(
+        data_dir2, split="train", image_size=image_size, crop_size=input_size
+    )
+    train_set2 = EASTDataset(train_set2)
+
+
+    train_set = ConcatDataset([train_set1, train_set2])
     train_num_batches = math.ceil(len(train_set) / batch_size)
     train_loader = DataLoader(
         train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
     )
 
+
     valid_set = SceneTextDataset(
-        data_dir, split="valid", image_size=image_size, crop_size=input_size
+        data_dir1, split="valid", image_size=image_size, crop_size=input_size
     )
     valid_set = EASTDataset(valid_set)
     valid_num_batches = math.ceil(len(valid_set) / batch_size)
@@ -181,6 +195,7 @@ def do_training(
                 best_epoch_loss = val_epoch_loss
                 ckpt_fpath = osp.join(model_dir, "best.pth")
                 torch.save(model.state_dict(), ckpt_fpath)
+
 
             ckpt_fpath = osp.join(model_dir, "latest.pth")
             torch.save(model.state_dict(), ckpt_fpath)
