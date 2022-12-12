@@ -188,3 +188,4 @@ poetry.toml
 pths/
 trained_models/
 wandb/
+*.ipynb

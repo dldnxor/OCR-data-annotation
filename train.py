@@ -4,6 +4,7 @@ import time
 import math
 from datetime import timedelta
 from argparse import ArgumentParser
+import random
 
 import torch
 from torch import cuda
@@ -15,8 +16,20 @@ from east_dataset import EASTDataset
 from dataset import SceneTextDataset
 from model import EAST
 
+from sklearn.metrics import f1_score, recall_score, precision_score
+import numpy as np
+
 import wandb
 
+
+def seed_everything(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
 
 def parse_args():
     parser = ArgumentParser()
@@ -25,12 +38,13 @@ def parse_args():
     parser.add_argument(
         "--data_dir",
         type=str,
-        default=os.environ.get("SM_CHANNEL_TRAIN", "../input/data/ICDAR17_Korean"),
+        default=os.environ.get("SM_CHANNEL_TRAIN", "../input/data/ICDAR17_All"),
     )
     parser.add_argument(
         "--model_dir", type=str, default=os.environ.get("SM_MODEL_DIR", "trained_models")
     )
 
+    parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument("--device", default="cuda" if cuda.is_available() else "cpu")
     parser.add_argument("--num_workers", type=int, default=4)
 
@@ -62,10 +76,25 @@ def do_training(
     max_epoch,
     save_interval,
 ):
-    dataset = SceneTextDataset(data_dir, split="train", image_size=image_size, crop_size=input_size)
-    dataset = EASTDataset(dataset)
-    num_batches = math.ceil(len(dataset) / batch_size)
-    train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    seed_everything(args.seed)
+
+    train_set = SceneTextDataset(
+        data_dir, split="train", image_size=image_size, crop_size=input_size
+    )
+    train_set = EASTDataset(train_set)
+    train_num_batches = math.ceil(len(train_set) / batch_size)
+    train_loader = DataLoader(
+        train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
+
+    valid_set = SceneTextDataset(
+        data_dir, split="valid", image_size=image_size, crop_size=input_size
+    )
+    valid_set = EASTDataset(valid_set)
+    valid_num_batches = math.ceil(len(valid_set) / batch_size)
+    valid_loader = DataLoader(
+        valid_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = EAST()
@@ -75,8 +104,8 @@ def do_training(
 
     model.train()
     for epoch in range(max_epoch):
-        epoch_loss, epoch_start = 0, time.time()
-        with tqdm(total=num_batches) as pbar:
+        epoch_loss, val_epoch_loss, epoch_start = 0, 0, time.time()
+        with tqdm(total=train_num_batches) as pbar:
             for img, gt_score_map, gt_geo_map, roi_mask in train_loader:
                 pbar.set_description("[Epoch {}]".format(epoch + 1))
 
@@ -97,18 +126,47 @@ def do_training(
                 pbar.set_postfix(val_dict)
         wandb.log(
             {
-                "epoch": epoch,
-                "epoch_loss": epoch_loss,
-                "Cls loss": extra_info["cls_loss"],
-                "Angle loss": extra_info["angle_loss"],
-                "IoU loss": extra_info["iou_loss"],
-            }
+                "Train/epoch_loss": epoch_loss,
+                "Train/Cls loss": extra_info["cls_loss"],
+                "Train/Angle loss": extra_info["angle_loss"],
+                "Train/IoU loss": extra_info["iou_loss"],
+            },
+            step=epoch,
+        )
+
+        with torch.no_grad():
+            print("Calculating validation results...")
+            model.eval()
+            with tqdm(total=valid_num_batches) as pbar:
+                for img, gt_score_map, gt_geo_map, roi_mask in valid_loader:
+                    pbar.set_description("[Epoch {}]".format(epoch + 1))
+
+                    loss, extra_info = model.train_step(img, gt_score_map, gt_geo_map, roi_mask)
+
+                    loss_val = loss.item()
+                    val_epoch_loss += loss_val
+
+                    pbar.update(1)
+                    val_dict = {
+                        "Valid Cls loss": extra_info["cls_loss"],
+                        "Valid Angle loss": extra_info["angle_loss"],
+                        "Valid IoU loss": extra_info["iou_loss"],
+                    }
+                    pbar.set_postfix(val_dict)
+        wandb.log(
+            {
+                "Val/epoch_loss": val_epoch_loss,
+                "Val/Cls loss": extra_info["cls_loss"],
+                "Val/Angle loss": extra_info["angle_loss"],
+                "Val/IoU loss": extra_info["iou_loss"],
+            },
+            step=epoch,
         )
         scheduler.step()
 
         print(
             "Mean loss: {:.4f} | Elapsed time: {}".format(
-                epoch_loss / num_batches, timedelta(seconds=time.time() - epoch_start)
+                epoch_loss / train_num_batches, timedelta(seconds=time.time() - epoch_start)
             )
         )
 
