@@ -46,6 +46,11 @@ def parse_args():
         default=os.environ.get("SM_CHANNEL_TRAIN", "../input/data/ICDAR15_All"),
     )
     parser.add_argument(
+        "--data_dir3",
+        type=str,
+        default=os.environ.get("SM_CHANNEL_TRAIN", "../input/data/upstage"),
+    )
+    parser.add_argument(
         "--model_dir", type=str, default=os.environ.get("SM_MODEL_DIR", "trained_models")
     )
 
@@ -53,7 +58,7 @@ def parse_args():
     parser.add_argument("--device", default="cuda" if cuda.is_available() else "cpu")
     parser.add_argument("--num_workers", type=int, default=4)
 
-    parser.add_argument("--image_size", type=int, default=1024)
+    parser.add_argument("--image_size", type=int, default=512)
     parser.add_argument("--input_size", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=12)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
@@ -72,6 +77,7 @@ def parse_args():
 def do_training(
     data_dir1,
     data_dir2,
+    data_dir3,
     model_dir,
     seed,
     device,
@@ -95,23 +101,32 @@ def do_training(
         data_dir2, split="train", image_size=image_size, crop_size=input_size
     )
     train_set2 = EASTDataset(train_set2)
+    
+    train_set3 = SceneTextDataset(
+        data_dir3, split="train", image_size=image_size, crop_size=input_size
+    )
+    train_set3 = EASTDataset(train_set3)
+    
+    train_set4 = SceneTextDataset(
+        data_dir1, split="valid", image_size=image_size, crop_size=input_size
+    )
+    train_set4 = EASTDataset(train_set4)
 
-
-    train_set = ConcatDataset([train_set1, train_set2])
+    train_set = ConcatDataset([train_set1, train_set2, train_set3, train_set4])
     train_num_batches = math.ceil(len(train_set) / batch_size)
     train_loader = DataLoader(
         train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
     )
 
 
-    valid_set = SceneTextDataset(
-        data_dir1, split="valid", image_size=image_size, crop_size=input_size
-    )
-    valid_set = EASTDataset(valid_set)
-    valid_num_batches = math.ceil(len(valid_set) / batch_size)
-    valid_loader = DataLoader(
-        valid_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
-    )
+    # valid_set = SceneTextDataset(
+    #     data_dir1, split="valid", image_size=image_size, crop_size=input_size
+    # )
+    # valid_set = EASTDataset(valid_set)
+    # valid_num_batches = math.ceil(len(valid_set) / batch_size)
+    # valid_loader = DataLoader(
+    #     valid_set, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    # )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = EAST()
@@ -125,6 +140,10 @@ def do_training(
         with tqdm(total=train_num_batches) as pbar:
             for img, gt_score_map, gt_geo_map, roi_mask in train_loader:
                 pbar.set_description("[Epoch {}]".format(epoch + 1))
+
+                if torch.sum(gt_score_map) < 1:
+                    print("WARNING : gt_score < 1")
+                    continue
 
                 loss, extra_info = model.train_step(img, gt_score_map, gt_geo_map, roi_mask)
                 optimizer.zero_grad()
@@ -151,34 +170,34 @@ def do_training(
             step=epoch,
         )
 
-        with torch.no_grad():
-            print("Calculating validation results...")
-            model.eval()
-            with tqdm(total=valid_num_batches) as pbar:
-                for img, gt_score_map, gt_geo_map, roi_mask in valid_loader:
-                    pbar.set_description("[Epoch {}]".format(epoch + 1))
+        # with torch.no_grad():
+        #     print("Calculating validation results...")
+        #     model.eval()
+        #     with tqdm(total=valid_num_batches) as pbar:
+        #         for img, gt_score_map, gt_geo_map, roi_mask in valid_loader:
+        #             pbar.set_description("[Epoch {}]".format(epoch + 1))
 
-                    loss, extra_info = model.train_step(img, gt_score_map, gt_geo_map, roi_mask)
+        #             loss, extra_info = model.train_step(img, gt_score_map, gt_geo_map, roi_mask)
 
-                    loss_val = loss.item()
-                    val_epoch_loss += loss_val
+        #             loss_val = loss.item()
+        #             val_epoch_loss += loss_val
 
-                    pbar.update(1)
-                    val_dict = {
-                        "Valid Cls loss": extra_info["cls_loss"],
-                        "Valid Angle loss": extra_info["angle_loss"],
-                        "Valid IoU loss": extra_info["iou_loss"],
-                    }
-                    pbar.set_postfix(val_dict)
-        wandb.log(
-            {
-                "Val/epoch_loss": val_epoch_loss,
-                "Val/Cls loss": extra_info["cls_loss"],
-                "Val/Angle loss": extra_info["angle_loss"],
-                "Val/IoU loss": extra_info["iou_loss"],
-            },
-            step=epoch,
-        )
+        #             pbar.update(1)
+        #             val_dict = {
+        #                 "Valid Cls loss": extra_info["cls_loss"],
+        #                 "Valid Angle loss": extra_info["angle_loss"],
+        #                 "Valid IoU loss": extra_info["iou_loss"],
+        #             }
+        #             pbar.set_postfix(val_dict)
+        # wandb.log(
+        #     {
+        #         "Val/epoch_loss": val_epoch_loss,
+        #         "Val/Cls loss": extra_info["cls_loss"],
+        #         "Val/Angle loss": extra_info["angle_loss"],
+        #         "Val/IoU loss": extra_info["iou_loss"],
+        #     },
+        #     step=epoch,
+        # )
         scheduler.step()
 
         print(
@@ -191,10 +210,10 @@ def do_training(
             if not osp.exists(model_dir):
                 os.makedirs(model_dir)
 
-            if best_epoch_loss > val_epoch_loss:
-                best_epoch_loss = val_epoch_loss
-                ckpt_fpath = osp.join(model_dir, "best.pth")
-                torch.save(model.state_dict(), ckpt_fpath)
+            # if best_epoch_loss > val_epoch_loss:
+            #     best_epoch_loss = val_epoch_loss
+            #     ckpt_fpath = osp.join(model_dir, "best.pth")
+            #     torch.save(model.state_dict(), ckpt_fpath)
 
 
             ckpt_fpath = osp.join(model_dir, "latest.pth")
