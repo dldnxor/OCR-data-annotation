@@ -11,7 +11,6 @@
 ## Index
 - [🏆데이터 제작 프로젝트🏆](#데이터-제작-프로젝트)
   - [🔥Member](#member)
-  - [|  |  |  |  |  |](#----------)
   - [Index](#index)
   - [🏅Project Summary](#project-summary)
   - [👨‍👩‍👧‍👧Team Roles](#team-roles)
