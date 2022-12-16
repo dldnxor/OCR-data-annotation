@@ -1,6 +1,6 @@
 # 🏆데이터 제작 프로젝트🏆
 ---
-![](https://velog.velcdn.com/images/tls991105/post/a99c92f3-f5f8-49e5-8071-46e89c35448a/image.png)
+![](https://velog.velcdn.com/images/tls991105/post/22fe4b87-92dd-44e9-a6c0-5a8cf60cbae9/image.png)
 
 ---
 ## 🔥Member
