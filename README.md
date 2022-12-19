@@ -107,6 +107,7 @@ OCR task는 글자 검출 (text detection), 글자 인식 (text recognition), �
 >>|ICDAR15|ICDAR17|Upstage|
 >>|:----:|:----:|:----:|
 >>|<img src="https://velog.velcdn.com/images/tls991105/post/46e4f837-4b4f-4db1-bcbd-ba72c256ea08/image.png">|<img src="https://velog.velcdn.com/images/tls991105/post/a9befc27-0b0f-4cba-a812-67ce7b98b9ed/image.png">|<img src="https://velog.velcdn.com/images/tls991105/post/f254f4dc-a7ec-461e-98ed-c003a8b1fee1/image.png">|
+>>
 >> ICDAR15와 ICDAR17 데이터는 영어의 비중이 매우 많았고 Upstage 데이터는 한글과 영어의 비중이 1:1의 비율을 보여주었다. 
 >
 >> * BBOX size
